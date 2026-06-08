@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import hashlib
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -166,6 +167,114 @@ def media_from_fxtwitter(path: Path, tweet_id: str) -> list[dict[str, Any]]:
     return media
 
 
+def visible_page_name(file_name: str) -> str:
+    return {
+        "browser_conversation.json": "主贴页",
+        "browser_search_url_latest.json": "评论/链接搜索页",
+        "browser_search_quote_latest.json": "引用搜索页",
+    }.get(file_name, file_name)
+
+
+def normalize_for_match(text: str) -> str:
+    return re.sub(r"\s+", "", text or "").lower()
+
+
+def visible_excerpt(text: str, max_chars: int = 96) -> str:
+    lines = []
+    for line in (text or "").splitlines():
+        clean = line.strip()
+        if not clean:
+            continue
+        if clean in {"Post", "关注", "回复", "转帖", "喜欢", "书签", "分享"}:
+            continue
+        if clean.startswith("http://") or clean.startswith("https://"):
+            continue
+        lines.append(clean)
+    compact = clean_text(" ".join(lines))
+    if len(compact) <= max_chars:
+        return compact
+    return compact[:max_chars].rstrip() + "..."
+
+
+def visible_insight(text: str, matched_item: dict[str, Any] | None) -> str:
+    if matched_item:
+        kind = matched_item.get("type")
+        if kind == "root":
+            return "可见主贴入口：负责定义主题和读者预期。"
+        if kind == "thread":
+            return "可见作者补充楼层：把主贴观点继续展开成论证链。"
+        if kind == "comment":
+            return "可见评论：提供读者疑问、反驳、补充或内容需求信号。"
+        if kind == "quote":
+            return "可见引用：说明该主题被外部传播或被作者接到下一篇。"
+        return "可见关联内容：补足上下游语境。"
+    if "Relevant people" in text or "What’s happening" in text or "Search" in text:
+        return "侧栏/导航信息，不作为正文拆解对象。"
+    if "Show translation" in text or "显示翻译" in text:
+        return "正文区可见内容，包含 X 的翻译/交互控件。"
+    if "likes" in text or "views" in text or "Bookmarks" in text:
+        return "可见互动指标，可辅助判断传播强弱。"
+    return "滚动过程中可见的正文块，已作为浏览器可见归档保留。"
+
+
+def build_visible_archive(raw_root: Path, root_id: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+    item_matchers = []
+    for item in items:
+        normalized = normalize_for_match(item.get("text") or "")
+        if not normalized:
+            continue
+        item_matchers.append((item, normalized[:48], normalized))
+
+    records = []
+    seen_hashes: set[str] = set()
+    snapshot_count = 0
+    article_block_count = 0
+    for file_name in RAW_FILES:
+        path = raw_root / root_id / file_name
+        if not path.exists():
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for snapshot in payload.get("scroll_snapshots") or []:
+            snapshot_count += 1
+            articles = snapshot.get("articles") or []
+            article_block_count += len(articles)
+            for article in articles:
+                text = article.get("text") or ""
+                normalized_text = normalize_for_match(text)
+                if not normalized_text:
+                    continue
+                digest = hashlib.sha1(normalized_text.encode("utf-8")).hexdigest()[:12]
+                if digest in seen_hashes:
+                    continue
+                seen_hashes.add(digest)
+                matched = None
+                for item, short_key, full_key in item_matchers:
+                    if (short_key and short_key in normalized_text) or normalized_text[:48] in full_key:
+                        matched = item
+                        break
+                records.append(
+                    {
+                        "page": visible_page_name(file_name),
+                        "raw_file": file_name,
+                        "step": snapshot.get("step"),
+                        "scroll_y": snapshot.get("scroll_y"),
+                        "article_index": article.get("index"),
+                        "matched_id": matched.get("id") if matched else "",
+                        "matched_type": matched.get("type") if matched else "",
+                        "matched_url": matched.get("url") if matched else "",
+                        "excerpt": visible_excerpt(text),
+                        "insight": visible_insight(text, matched),
+                    }
+                )
+
+    return {
+        "snapshot_count": snapshot_count,
+        "article_block_count": article_block_count,
+        "unique_block_count": len(records),
+        "records": records,
+    }
+
+
 def author_screen_name(tweet: dict[str, Any]) -> str:
     user = (((tweet.get("core") or {}).get("user_results") or {}).get("result") or {})
     return (
@@ -274,12 +383,14 @@ def extract_source(raw_root: Path, label: str, root_id: str) -> dict[str, Any]:
     items.sort(key=lambda item: (type_order.get(item["type"], 9), item.get("created_at") or "", item["id"]))
     counts = Counter(item["type"] for item in items)
     media_count = sum(len(item.get("media") or []) for item in items)
+    visible_archive = build_visible_archive(raw_root, root_id, items)
     return {
         "label": label,
         "root_id": root_id,
         "source_url": f"https://x.com/{AUTHOR}/status/{root_id}",
         "counts": dict(counts),
         "media_count": media_count,
+        "visible_archive": visible_archive,
         "items": items,
     }
 

@@ -66,6 +66,24 @@ def main() -> int:
                 print("ok" if ok else "fail", file_name, error or "")
                 time.sleep(0.2)
 
+    for path in sorted(OUT_DIR.glob("*.jpg")):
+        if path.name in seen:
+            continue
+        manifest.append(
+            {
+                "tweet_id": path.name.split("_", 1)[0],
+                "source_label": "历史已归档媒体",
+                "media_id": None,
+                "type": "photo",
+                "source_url": "",
+                "file": f"assets/x-media/{path.name}",
+                "bytes": path.stat().st_size,
+                "ok": True,
+                "error": None,
+                "note": "File was archived by a previous crawl but not returned by the latest X payload.",
+            }
+        )
+
     (OUT_DIR / "manifest.json").write_text(
         json.dumps(
             {

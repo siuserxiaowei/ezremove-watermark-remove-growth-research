@@ -68,6 +68,62 @@ def sanitize_dom_text(text: str) -> list[str]:
     return lines[:80]
 
 
+def sanitize_article_text(text: str) -> str:
+    lines = sanitize_dom_text(text)
+    if not lines:
+        return ""
+    # X repeats action labels and sidebar text frequently; keep the compact
+    # article block so later extraction can dedupe visible scroll snapshots.
+    return "\n".join(lines[:36])
+
+
+def collect_visible_snapshot(page, step: int, phase: str) -> dict[str, Any]:
+    try:
+        scroll_y = page.evaluate("() => Math.round(window.scrollY)")
+    except Exception:
+        scroll_y = None
+    try:
+        article_texts = page.locator("article").evaluate_all(
+            """els => els.map((el, index) => ({
+                index,
+                text: el.innerText || "",
+                top: Math.round(el.getBoundingClientRect().top),
+                height: Math.round(el.getBoundingClientRect().height)
+            }))"""
+        )
+    except Exception:
+        article_texts = []
+
+    articles = []
+    seen = set()
+    for article in article_texts:
+        text = sanitize_article_text(article.get("text") or "")
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        articles.append(
+            {
+                "index": article.get("index"),
+                "top": article.get("top"),
+                "height": article.get("height"),
+                "text": text,
+            }
+        )
+    try:
+        body_text = page.locator("body").inner_text(timeout=5000)
+    except Exception:
+        body_text = ""
+
+    return {
+        "step": step,
+        "phase": phase,
+        "scroll_y": scroll_y,
+        "article_count": len(articles),
+        "articles": articles[:20],
+        "body_lines_sample": sanitize_dom_text(body_text)[:40],
+    }
+
+
 def collect_page(
     page,
     url: str,
@@ -75,8 +131,10 @@ def collect_page(
     *,
     scrolls: int = 3,
     wait_ms: int = 1500,
+    goto_timeout_ms: int = 20_000,
 ) -> dict[str, Any]:
     responses: list[dict[str, Any]] = []
+    scroll_snapshots: list[dict[str, Any]] = []
     error = None
 
     def on_response(response):
@@ -97,13 +155,19 @@ def collect_page(
 
     page.on("response", on_response)
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+        page.goto(url, wait_until="domcontentloaded", timeout=goto_timeout_ms)
+    except Exception as exc:  # noqa: BLE001 - X often keeps loading; still capture visible DOM.
+        error = repr(exc)
+
+    try:
         page.wait_for_timeout(wait_ms)
-        for _ in range(scrolls):
+        scroll_snapshots.append(collect_visible_snapshot(page, 0, "initial"))
+        for idx in range(1, scrolls + 1):
             page.mouse.wheel(0, 1400)
             page.wait_for_timeout(900)
+            scroll_snapshots.append(collect_visible_snapshot(page, idx, "after_wheel"))
     except Exception as exc:  # noqa: BLE001 - persisted for crawl diagnostics.
-        error = repr(exc)
+        error = f"{error} | {repr(exc)}" if error else repr(exc)
     try:
         body_text = page.locator("body").inner_text(timeout=10_000)
     except PlaywrightTimeoutError:
@@ -118,6 +182,7 @@ def collect_page(
         "error": error,
         "response_count": len(responses),
         "responses": responses,
+        "scroll_snapshots": scroll_snapshots,
         "dom_text": body_text,
     }
     save_json(raw_out, raw)
@@ -127,6 +192,12 @@ def collect_page(
 def main() -> int:
     scrolls = int(os.environ.get("X_BROWSER_SCROLLS", "3"))
     wait_ms = int(os.environ.get("X_BROWSER_WAIT_MS", "1500"))
+    goto_timeout_ms = int(os.environ.get("X_BROWSER_GOTO_TIMEOUT_MS", "20000"))
+    only_ids = {
+        item.strip()
+        for item in os.environ.get("X_TWEET_IDS", "").split(",")
+        if item.strip()
+    }
     x_cookies = chrome_cookies_for_playwright("x.com")
     twitter_cookies = chrome_cookies_for_playwright("twitter.com")
     all_cookies = x_cookies + twitter_cookies
@@ -159,6 +230,8 @@ def main() -> int:
         page = context.new_page()
 
         for label, tweet_id in TWEETS:
+            if only_ids and tweet_id not in only_ids:
+                continue
             print(f"browser crawl {tweet_id} {label}", flush=True)
             item_dir = RAW_DIR / tweet_id
             item_dir.mkdir(parents=True, exist_ok=True)
@@ -180,6 +253,7 @@ def main() -> int:
                     item_dir / f"browser_{name}.json",
                     scrolls=scrolls,
                     wait_ms=wait_ms,
+                    goto_timeout_ms=goto_timeout_ms,
                 )
                 page_payloads.append((name, raw))
                 time.sleep(1)
@@ -208,6 +282,15 @@ def main() -> int:
                 t for t in summaries if t["id"] != tweet_id and t.get("quoted_status_id") == tweet_id
             ]
             dom_lines = sanitize_dom_text(page_payloads[0][1].get("dom_text", ""))
+            scroll_snapshot_count = sum(
+                len(raw.get("scroll_snapshots") or [])
+                for _, raw in page_payloads
+            )
+            visible_article_count = sum(
+                snapshot.get("article_count", 0)
+                for _, raw in page_payloads
+                for snapshot in raw.get("scroll_snapshots") or []
+            )
 
             manifest["items"].append(
                 {
@@ -222,6 +305,8 @@ def main() -> int:
                     "reply_samples": replies[:8],
                     "quote_samples": quotes[:8],
                     "dom_lines_sample": dom_lines[:40],
+                    "scroll_snapshot_count": scroll_snapshot_count,
+                    "visible_article_count": visible_article_count,
                     "raw_local_dir": str(item_dir.relative_to(RAW_DIR.parents[1])),
                 }
             )

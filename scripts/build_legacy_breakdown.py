@@ -319,6 +319,23 @@ def load_corpus() -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def archived_media_files() -> set[str]:
+    media_dir = DOCS / "assets" / "x-media"
+    if not media_dir.exists():
+        return set()
+    return {path.name for path in media_dir.glob("*.jpg")}
+
+
+def corpus_media_files(corpus: dict) -> set[str]:
+    return {
+        media.get("file_name")
+        for source in corpus["sources"]
+        for item in source["items"]
+        for media in (item.get("media") or [])
+        if media.get("file_name")
+    }
+
+
 def type_name(kind: str) -> str:
     return {
         "root": "主贴",
@@ -406,12 +423,24 @@ def md_cell(value: object) -> str:
 
 
 def item_original_text(item: dict) -> str:
+    if item.get("type") in {"root", "thread", "related"}:
+        return "公开页不复制长原文；见链接、逐条拆解和本地 raw 归档。"
     text = item.get("text") or ""
-    if item.get("type") in {"comment", "quote"}:
+    if len(text) <= 48:
         return text
-    if len(text) <= 220:
-        return text
-    return text[:220].rstrip() + "..."
+    return text[:48].rstrip() + "..."
+
+
+def visible_public_excerpt(record: dict) -> str:
+    matched_type = record.get("matched_type")
+    if matched_type in {"root", "thread", "related"}:
+        return f"已看到{type_name(matched_type)}内容；公开页不复制长原文，见链接和拆解。"
+    excerpt = record.get("excerpt") or ""
+    if matched_type in {"comment", "quote"}:
+        return excerpt if len(excerpt) <= 48 else excerpt[:48].rstrip() + "..."
+    if len(excerpt) <= 36:
+        return excerpt or "-"
+    return "可见正文/页面块已归档；公开页只保留结构化线索。"
 
 
 def media_markdown(source: dict) -> list[str]:
@@ -435,6 +464,62 @@ def media_markdown(source: dict) -> list[str]:
     return rows
 
 
+def orphan_media_markdown(corpus: dict) -> list[str]:
+    orphan_files = sorted(archived_media_files() - corpus_media_files(corpus))
+    if not orphan_files:
+        return []
+    rows = [
+        "## 历史已归档图片补充",
+        "",
+        "以下图片是历史抓取时已经归档到仓库的 X 媒体文件；本轮 X payload 没有重新返回对应媒体对象，但文件仍保留并展示，避免遗漏已保存素材。",
+        "",
+    ]
+    for file_name in orphan_files:
+        tweet_id = file_name.split("_", 1)[0]
+        rows.extend(
+            [
+                f"![历史归档图片 {file_name}](assets/x-media/{file_name})",
+                "",
+                f"- 关联 tweet id：[{tweet_id}](https://x.com/i/web/status/{tweet_id})；本地文件：`assets/x-media/{file_name}`",
+                "",
+            ]
+        )
+    return rows
+
+
+def visible_archive_markdown(source: dict) -> list[str]:
+    archive = source.get("visible_archive") or {}
+    records = archive.get("records") or []
+    header = [
+        f"逐屏滚动快照 {archive.get('snapshot_count', 0)} 份；可见文章块 {archive.get('article_block_count', 0)} 个；去重后可见内容块 {archive.get('unique_block_count', 0)} 个。",
+        "",
+    ]
+    if not records:
+        return header + ["暂无逐屏可见内容快照；需要重新运行浏览器抓取脚本。"]
+    rows = [
+        "| 页面 | 屏次/位置 | 匹配对象 | 公开短线索 | 读完后的拆解 |",
+        "|---|---|---|---|---|",
+    ]
+    for record in records:
+        matched = "-"
+        if record.get("matched_id"):
+            matched = f"[{type_name(record.get('matched_type'))} {record['matched_id']}]({record.get('matched_url')})"
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    md_cell(record.get("page") or "-"),
+                    md_cell(f"第 {record.get('step')} 屏 / y={record.get('scroll_y')}"),
+                    md_cell(matched),
+                    md_cell(visible_public_excerpt(record)),
+                    md_cell(record.get("insight") or "-"),
+                ]
+            )
+            + " |"
+        )
+    return header + rows
+
+
 def item_line(item: dict) -> str:
     metrics = item.get("metrics") or {}
     metric_bits = []
@@ -450,7 +535,7 @@ def item_table(items: list[dict]) -> list[str]:
     if not items:
         return ["暂无。"]
     rows = [
-        "| 类型 | 链接 | 互动 | 原文/评论文本 | 内容要点 | 这一层的作用 | 可复用动作 |",
+        "| 类型 | 链接 | 互动 | 公开短线索/评论线索 | 内容要点 | 这一层的作用 | 可复用动作 |",
         "|---|---|---:|---|---|---|---|",
     ]
     for item in items:
@@ -523,12 +608,19 @@ def source_section(source: dict) -> str:
         f"- 来源：[{source['source_url']}]({source['source_url']})",
         f"- 抓取结构：主贴 {counts.get('root', 0)}，作者补充楼层 {counts.get('thread', 0)}，评论 {counts.get('comment', 0)}，引用 {counts.get('quote', 0)}，关联内容 {counts.get('related', 0)}",
         f"- 媒体：已归档 {source.get('media_count', 0)} 个图片/媒体文件",
+        f"- 逐屏可见归档：快照 {source.get('visible_archive', {}).get('snapshot_count', 0)} 份，去重内容块 {source.get('visible_archive', {}).get('unique_block_count', 0)} 个",
         f"- 主题：{analysis['theme']}",
         "",
         "### 配图/媒体归档",
         "",
     ]
     parts.extend(media_markdown(source))
+    parts.extend([
+        "",
+        "### 浏览器逐屏可见内容归档",
+        "",
+    ])
+    parts.extend(visible_archive_markdown(source))
     parts.extend([
         "",
         "### 全文结构拆解",
@@ -577,16 +669,20 @@ def comment_insights_section(total_counts: Counter) -> str:
 def build_markdown(corpus: dict) -> str:
     total_items = sum(len(source["items"]) for source in corpus["sources"])
     total_media = sum(source.get("media_count", 0) for source in corpus["sources"])
-    unique_media = {
-        media.get("file_name")
-        for source in corpus["sources"]
-        for item in source["items"]
-        for media in (item.get("media") or [])
-        if media.get("file_name")
-    }
+    unique_media = corpus_media_files(corpus)
+    archived_media = archived_media_files()
+    total_unique_media = len(unique_media | archived_media)
+    orphan_media_count = len(archived_media - unique_media)
     total_counts = Counter()
+    total_snapshots = 0
+    total_visible_blocks = 0
+    total_unique_visible_blocks = 0
     for source in corpus["sources"]:
         total_counts.update(source["counts"])
+        archive = source.get("visible_archive") or {}
+        total_snapshots += archive.get("snapshot_count", 0)
+        total_visible_blocks += archive.get("article_block_count", 0)
+        total_unique_visible_blocks += archive.get("unique_block_count", 0)
 
     sections = "\n".join(source_section(source) for source in corpus["sources"])
 
@@ -595,12 +691,12 @@ def build_markdown(corpus: dict) -> str:
 > 目标站点：[https://ezremove.ai/](https://ezremove.ai/)
 > 目标词：`watermark remove`
 > 输出日期：2026-06-08
-> 本版目标：不是指标表，而是把 12 篇 X/Twitter 内容、作者补充楼层、评论和引用拆解成可学习、可复刻、可落地到 EzRemove 的增长方法论。
-> 公开版说明：完整原始响应保存在本地忽略文件 `data/processed/public_legacy_content_corpus.json` 与 `data/raw` 中；公开页保留链接、配图、评论文本、结构化拆解和执行映射。
+> 本版目标：不是指标表，而是把 12 篇 X/Twitter 内容、作者补充楼层、评论、引用和浏览器逐屏可见内容拆解成可学习、可复刻、可落地到 EzRemove 的增长方法论。
+> 公开版说明：完整原始响应和逐屏 DOM 快照保存在本地忽略文件 `data/processed/public_legacy_content_corpus.json` 与 `data/raw` 中；公开页保留链接、配图、公开短线索、评论/引用线索、结构化拆解和执行映射。
 
 ## 总览
 
-本次解析出 {len(corpus["sources"])} 个来源主题、{total_items} 条有效 tweet 对象：主贴 {total_counts.get("root", 0)} 条，作者补充楼层 {total_counts.get("thread", 0)} 条，评论 {total_counts.get("comment", 0)} 条，引用 {total_counts.get("quote", 0)} 条，关联内容 {total_counts.get("related", 0)} 条；媒体引用 {total_media} 处，唯一归档图片/媒体文件 {len(unique_media)} 个。
+本次解析出 {len(corpus["sources"])} 个来源主题、{total_items} 条有效 tweet 对象：主贴 {total_counts.get("root", 0)} 条，作者补充楼层 {total_counts.get("thread", 0)} 条，评论 {total_counts.get("comment", 0)} 条，引用 {total_counts.get("quote", 0)} 条，关联内容 {total_counts.get("related", 0)} 条；媒体引用 {total_media} 处，唯一归档图片/媒体文件 {total_unique_media} 个（其中历史补充 {orphan_media_count} 个）；浏览器逐屏滚动快照 {total_snapshots} 份，可见文章块 {total_visible_blocks} 个，去重可见内容块 {total_unique_visible_blocks} 个。
 
 这批内容真正有价值的不是“某个 SEO 技巧”，而是一套从认知、选词、内容、外链、社媒冷启动、代理数据判断到商业化承接的增长系统：
 
@@ -623,6 +719,8 @@ def build_markdown(corpus: dict) -> str:
 {comment_insights_section(total_counts)}
 
 {sections}
+
+{chr(10).join(orphan_media_markdown(corpus))}
 
 ## 对 EzRemove 的总执行方案
 
@@ -790,13 +888,13 @@ def build_html(markdown: str) -> str:
 
 def build_readme(corpus: dict, total_items: int, total_counts: Counter) -> str:
     total_media = sum(source.get("media_count", 0) for source in corpus["sources"])
-    unique_media = {
-        media.get("file_name")
-        for source in corpus["sources"]
-        for item in source["items"]
-        for media in (item.get("media") or [])
-        if media.get("file_name")
-    }
+    unique_media = corpus_media_files(corpus)
+    archived_media = archived_media_files()
+    total_unique_media = len(unique_media | archived_media)
+    orphan_media_count = len(archived_media - unique_media)
+    total_snapshots = sum((source.get("visible_archive") or {}).get("snapshot_count", 0) for source in corpus["sources"])
+    total_visible_blocks = sum((source.get("visible_archive") or {}).get("article_block_count", 0) for source in corpus["sources"])
+    total_unique_visible_blocks = sum((source.get("visible_archive") or {}).get("unique_block_count", 0) for source in corpus["sources"])
     return f"""# EzRemove `watermark remove` 增长研究
 
 本仓库保存对 ZaneWynn_SEO 12 篇 X/Twitter 遗产内容的结构化拆解，并映射到 EzRemove 的 `watermark remove` 增长执行方案。
@@ -815,9 +913,13 @@ def build_readme(corpus: dict, total_items: int, total_counts: Counter) -> str:
 - 引用：{total_counts.get("quote", 0)} 条
 - 关联内容：{total_counts.get("related", 0)} 条
 - 媒体引用：{total_media} 处
-- 唯一归档图片/媒体文件：{len(unique_media)} 个
+- 唯一归档图片/媒体文件：{total_unique_media} 个
+- 历史补充图片：{orphan_media_count} 个
+- 浏览器逐屏滚动快照：{total_snapshots} 份
+- 可见文章块：{total_visible_blocks} 个
+- 去重可见内容块：{total_unique_visible_blocks} 个
 
-公开版保留链接、配图、结构化拆解、评论/引用文本和 EzRemove 执行映射；完整原始响应只保存在本地忽略目录 `data/raw` 与 `data/processed/public_legacy_content_corpus.json`。
+公开版保留链接、配图、公开短线索、结构化拆解、评论/引用线索和 EzRemove 执行映射；完整原始响应和逐屏 DOM 快照只保存在本地忽略目录 `data/raw` 与 `data/processed/public_legacy_content_corpus.json`。
 """
 
 

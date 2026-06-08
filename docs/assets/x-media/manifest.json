@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-08T10:51:49Z",
+  "generated_at": "2026-06-08T12:14:29Z",
   "count": 27,
   "items": [
     {
@@ -201,28 +201,6 @@
       "error": null
     },
     {
-      "tweet_id": "1866780845656473877",
-      "source_label": "小红书冷启动-2",
-      "media_id": "1866773625136877569",
-      "type": "photo",
-      "source_url": "https://pbs.twimg.com/media/GegcuLJaEAEHCgH.jpg?name=orig",
-      "file": "assets/x-media/1866780845656473877_1866773625136877569.jpg",
-      "bytes": 94506,
-      "ok": true,
-      "error": null
-    },
-    {
-      "tweet_id": "1866780845656473877",
-      "source_label": "小红书冷启动-2",
-      "media_id": "1866773630514081792",
-      "type": "photo",
-      "source_url": "https://pbs.twimg.com/media/GegcufLbsAAQ-Hi.jpg?name=orig",
-      "file": "assets/x-media/1866780845656473877_1866773630514081792.jpg",
-      "bytes": 88379,
-      "ok": true,
-      "error": null
-    },
-    {
       "tweet_id": "1872582875465601044",
       "source_label": "小红书中产人设",
       "media_id": "1872582477593952256",
@@ -298,6 +276,30 @@
       "bytes": 172882,
       "ok": true,
       "error": null
+    },
+    {
+      "tweet_id": "1866780845656473877",
+      "source_label": "历史已归档媒体",
+      "media_id": null,
+      "type": "photo",
+      "source_url": "",
+      "file": "assets/x-media/1866780845656473877_1866773625136877569.jpg",
+      "bytes": 94506,
+      "ok": true,
+      "error": null,
+      "note": "File was archived by a previous crawl but not returned by the latest X payload."
+    },
+    {
+      "tweet_id": "1866780845656473877",
+      "source_label": "历史已归档媒体",
+      "media_id": null,
+      "type": "photo",
+      "source_url": "",
+      "file": "assets/x-media/1866780845656473877_1866773630514081792.jpg",
+      "bytes": 88379,
+      "ok": true,
+      "error": null,
+      "note": "File was archived by a previous crawl but not returned by the latest X payload."
     }
   ]
 }
