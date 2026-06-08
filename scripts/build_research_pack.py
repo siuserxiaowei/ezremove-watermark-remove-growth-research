@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import html
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -234,6 +235,21 @@ AI 图片编辑、短视频剪辑、电商素材处理和社媒内容生产仍�
 """
 
 
+def markdown_to_body(markdown: str) -> str:
+    try:
+        result = subprocess.run(
+            ["pandoc", "-f", "gfm", "-t", "html"],
+            input=markdown,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        return result.stdout
+    except Exception:
+        escaped = html.escape(markdown)
+        return f"<pre>{escaped}</pre>"
+
+
 def build_html(markdown: str) -> str:
     cards = [
         ("术", "免费工具 + KOL + 品牌搜索", "把低摩擦体验变成真实需求，而不是虚假点击。"),
@@ -246,6 +262,7 @@ def build_html(markdown: str) -> str:
         f"<section class='card'><div class='glyph'>{html.escape(k)}</div><h2>{html.escape(t)}</h2><p>{html.escape(d)}</p></section>"
         for k, t, d in cards
     )
+    document_html = markdown_to_body(markdown)
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -318,10 +335,52 @@ def build_html(markdown: str) -> str:
     h2 {{ margin-top: 0; letter-spacing: 0; }}
     ul {{ padding-left: 20px; }}
     a {{ color: #0f766e; }}
+    .doc {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 34px;
+      margin-top: 22px;
+      overflow-wrap: anywhere;
+    }}
+    .doc h1 {{ font-size: 34px; margin: 0 0 18px; line-height: 1.18; }}
+    .doc h2 {{ margin-top: 34px; padding-top: 12px; border-top: 1px solid var(--line); }}
+    .doc h3 {{ margin-top: 24px; }}
+    .doc blockquote {{
+      margin: 18px 0;
+      padding: 12px 16px;
+      border-left: 4px solid var(--accent);
+      background: #f0fdfa;
+      color: #334155;
+    }}
+    .doc table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0 26px;
+      font-size: 14px;
+      display: block;
+      overflow-x: auto;
+    }}
+    .doc th, .doc td {{
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
+    }}
+    .doc th {{ background: #f1f5f9; }}
+    code {{
+      background: #eef2f7;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: .92em;
+    }}
     @media (max-width: 900px) {{
       .grid {{ grid-template-columns: 1fr; }}
       .metrics {{ grid-template-columns: 1fr 1fr; }}
       header {{ padding-top: 38px; }}
+      .doc {{ padding: 22px; }}
+      .doc h1 {{ font-size: 28px; }}
     }}
   </style>
 </head>
@@ -366,10 +425,9 @@ def build_html(markdown: str) -> str:
         <li>90 天：沉淀品牌搜索资产，扩展多语言/多场景工具矩阵。</li>
       </ul>
     </section>
-    <section class="panel">
-      <h2>完整文档</h2>
-      <p>完整 Markdown 研究文档见 <a href="./ezremove-watermark-remove-growth-research.md">ezremove-watermark-remove-growth-research.md</a>。</p>
-    </section>
+    <article class="doc">
+      {document_html}
+    </article>
   </main>
 </body>
 </html>
