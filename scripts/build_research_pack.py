@@ -368,7 +368,7 @@ def build_html(markdown: str) -> str:
     </section>
     <section class="panel">
       <h2>完整文档</h2>
-      <p>完整 Markdown 研究文档见 GitHub 仓库的 <a href="../docs/ezremove-watermark-remove-growth-research.md">docs/ezremove-watermark-remove-growth-research.md</a>。</p>
+      <p>完整 Markdown 研究文档见 <a href="./ezremove-watermark-remove-growth-research.md">ezremove-watermark-remove-growth-research.md</a>。</p>
     </section>
   </main>
 </body>
@@ -415,7 +415,9 @@ def main() -> int:
     }
     (DOCS / "ezremove-watermark-remove-growth-research.md").write_text(markdown, encoding="utf-8")
     (ROOT / "README.md").write_text(markdown.split("## 数据来源")[0], encoding="utf-8")
-    (SITE / "index.html").write_text(build_html(markdown), encoding="utf-8")
+    html_doc = build_html(markdown)
+    (SITE / "index.html").write_text(html_doc, encoding="utf-8")
+    (DOCS / "index.html").write_text(html_doc, encoding="utf-8")
     (PROCESSED / "public_metrics.json").write_text(
         json.dumps(public_metrics, ensure_ascii=False, indent=2), encoding="utf-8"
     )
