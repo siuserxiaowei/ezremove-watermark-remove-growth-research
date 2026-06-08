@@ -15,5 +15,7 @@
 - 评论：13 条
 - 引用：9 条
 - 关联内容：7 条
+- 媒体引用：38 处
+- 唯一归档图片/媒体文件：27 个
 
-公开版保留链接、结构化拆解、评论/引用洞察和 EzRemove 执行映射；完整原始文本只保存在本地忽略目录 `data/raw` 与 `data/processed/public_legacy_content_corpus.json`。
+公开版保留链接、配图、结构化拆解、评论/引用文本和 EzRemove 执行映射；完整原始响应只保存在本地忽略目录 `data/raw` 与 `data/processed/public_legacy_content_corpus.json`。

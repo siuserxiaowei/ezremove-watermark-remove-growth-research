@@ -405,6 +405,36 @@ def md_cell(value: object) -> str:
     return str(value).replace("|", "\\|").replace("\n", "<br>")
 
 
+def item_original_text(item: dict) -> str:
+    text = item.get("text") or ""
+    if item.get("type") in {"comment", "quote"}:
+        return text
+    if len(text) <= 220:
+        return text
+    return text[:220].rstrip() + "..."
+
+
+def media_markdown(source: dict) -> list[str]:
+    rows = []
+    for item in source["items"]:
+        for idx, media in enumerate(item.get("media") or [], 1):
+            local = f"assets/x-media/{media['file_name']}"
+            caption = f"{type_name(item['type'])} [{item['id']}]({item['url']}) 配图 {idx}"
+            if media.get("width") and media.get("height"):
+                caption += f"（{media['width']}x{media['height']}）"
+            rows.extend(
+                [
+                    f"![{caption}]({local})",
+                    "",
+                    f"- {caption}；原图来源：[{media.get('id')}]({media.get('url')})",
+                    "",
+                ]
+            )
+    if not rows:
+        return ["暂无抓取到配图或视频媒体。"]
+    return rows
+
+
 def item_line(item: dict) -> str:
     metrics = item.get("metrics") or {}
     metric_bits = []
@@ -420,8 +450,8 @@ def item_table(items: list[dict]) -> list[str]:
     if not items:
         return ["暂无。"]
     rows = [
-        "| 类型 | 链接 | 互动 | 内容要点 | 这一层的作用 | 可复用动作 |",
-        "|---|---|---:|---|---|---|",
+        "| 类型 | 链接 | 互动 | 原文/评论文本 | 内容要点 | 这一层的作用 | 可复用动作 |",
+        "|---|---|---:|---|---|---|---|",
     ]
     for item in items:
         metrics = item.get("metrics") or {}
@@ -439,6 +469,7 @@ def item_table(items: list[dict]) -> list[str]:
                     md_cell(type_name(item["type"])),
                     md_cell(f"[{item['id']}]({item['url']})"),
                     md_cell("<br>".join(metric) if metric else "-"),
+                    md_cell(item_original_text(item)),
                     md_cell(item_note(item)),
                     md_cell(item_role(item)),
                     md_cell(item_action(item)),
@@ -491,11 +522,18 @@ def source_section(source: dict) -> str:
         "",
         f"- 来源：[{source['source_url']}]({source['source_url']})",
         f"- 抓取结构：主贴 {counts.get('root', 0)}，作者补充楼层 {counts.get('thread', 0)}，评论 {counts.get('comment', 0)}，引用 {counts.get('quote', 0)}，关联内容 {counts.get('related', 0)}",
+        f"- 媒体：已归档 {source.get('media_count', 0)} 个图片/媒体文件",
         f"- 主题：{analysis['theme']}",
         "",
-        "### 内容结构拆解",
+        "### 配图/媒体归档",
         "",
     ]
+    parts.extend(media_markdown(source))
+    parts.extend([
+        "",
+        "### 全文结构拆解",
+        "",
+    ])
     for idx, bullet in enumerate(analysis["logic"], 1):
         parts.append(f"{idx}. {bullet}")
     parts.extend(["", "### 主贴与楼层逐条拆解", ""])
@@ -517,10 +555,10 @@ def source_section(source: dict) -> str:
     return "\n".join(parts)
 
 
-def comment_insights_section() -> str:
-    return """## 评论/引用总洞察
+def comment_insights_section(total_counts: Counter) -> str:
+    return f"""## 评论/引用总洞察
 
-本次原始数据里可明确拆出的非作者互动包括 13 条评论/回复和 1 条非作者引用；页面级统计中的其他引用对象更多用于系列上下文和关联内容。评论区传递出的重点不是“大家觉得有用”这种泛反馈，而是很具体的执行缺口：
+本次原始数据里可明确拆出的互动包括评论/回复 {total_counts.get("comment", 0)} 条、引用 {total_counts.get("quote", 0)} 条；页面级引用对象里既有非作者引用，也有作者用来承接下一篇的系列引用。评论区传递出的重点不是“大家觉得有用”这种泛反馈，而是很具体的执行缺口：
 
 | 评论信号 | 说明 | 对 EzRemove 的落地动作 |
 |---|---|---|
@@ -538,6 +576,14 @@ def comment_insights_section() -> str:
 
 def build_markdown(corpus: dict) -> str:
     total_items = sum(len(source["items"]) for source in corpus["sources"])
+    total_media = sum(source.get("media_count", 0) for source in corpus["sources"])
+    unique_media = {
+        media.get("file_name")
+        for source in corpus["sources"]
+        for item in source["items"]
+        for media in (item.get("media") or [])
+        if media.get("file_name")
+    }
     total_counts = Counter()
     for source in corpus["sources"]:
         total_counts.update(source["counts"])
@@ -550,11 +596,11 @@ def build_markdown(corpus: dict) -> str:
 > 目标词：`watermark remove`
 > 输出日期：2026-06-08
 > 本版目标：不是指标表，而是把 12 篇 X/Twitter 内容、作者补充楼层、评论和引用拆解成可学习、可复刻、可落地到 EzRemove 的增长方法论。
-> 公开版说明：完整原始文本保存在本地忽略文件 `data/processed/public_legacy_content_corpus.json` 与 `data/raw` 中；公开页保留链接、结构化拆解、评论/引用洞察和执行映射，不大段搬运原文。
+> 公开版说明：完整原始响应保存在本地忽略文件 `data/processed/public_legacy_content_corpus.json` 与 `data/raw` 中；公开页保留链接、配图、评论文本、结构化拆解和执行映射。
 
 ## 总览
 
-本次解析出 {len(corpus["sources"])} 个来源主题、{total_items} 条有效 tweet 对象：主贴 {total_counts.get("root", 0)} 条，作者补充楼层 {total_counts.get("thread", 0)} 条，评论 {total_counts.get("comment", 0)} 条，引用 {total_counts.get("quote", 0)} 条，关联内容 {total_counts.get("related", 0)} 条。
+本次解析出 {len(corpus["sources"])} 个来源主题、{total_items} 条有效 tweet 对象：主贴 {total_counts.get("root", 0)} 条，作者补充楼层 {total_counts.get("thread", 0)} 条，评论 {total_counts.get("comment", 0)} 条，引用 {total_counts.get("quote", 0)} 条，关联内容 {total_counts.get("related", 0)} 条；媒体引用 {total_media} 处，唯一归档图片/媒体文件 {len(unique_media)} 个。
 
 这批内容真正有价值的不是“某个 SEO 技巧”，而是一套从认知、选词、内容、外链、社媒冷启动、代理数据判断到商业化承接的增长系统：
 
@@ -574,7 +620,7 @@ def build_markdown(corpus: dict) -> str:
 | 器 | Semrush、GSC、Trends、GA4、UTM、X 评论、页面模板 | 每周复盘词、页、渠道、转化 |
 | 势 | AI 图片/视频编辑需求、电商素材处理、短视频素材复用 | `watermark remove` 不是单词，而是素材处理工作流入口 |
 
-{comment_insights_section()}
+{comment_insights_section(total_counts)}
 
 {sections}
 
@@ -708,6 +754,15 @@ def build_html(markdown: str) -> str:
       border-radius: 4px;
       font-size: .92em;
     }}
+    img {{
+      display: block;
+      max-width: min(100%, 920px);
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin: 18px 0 10px;
+      background: #f8fafc;
+    }}
     @media (max-width: 760px) {{
       article {{ padding: 22px; }}
       h1 {{ font-size: 28px; }}
@@ -734,6 +789,14 @@ def build_html(markdown: str) -> str:
 
 
 def build_readme(corpus: dict, total_items: int, total_counts: Counter) -> str:
+    total_media = sum(source.get("media_count", 0) for source in corpus["sources"])
+    unique_media = {
+        media.get("file_name")
+        for source in corpus["sources"]
+        for item in source["items"]
+        for media in (item.get("media") or [])
+        if media.get("file_name")
+    }
     return f"""# EzRemove `watermark remove` 增长研究
 
 本仓库保存对 ZaneWynn_SEO 12 篇 X/Twitter 遗产内容的结构化拆解，并映射到 EzRemove 的 `watermark remove` 增长执行方案。
@@ -751,8 +814,10 @@ def build_readme(corpus: dict, total_items: int, total_counts: Counter) -> str:
 - 评论：{total_counts.get("comment", 0)} 条
 - 引用：{total_counts.get("quote", 0)} 条
 - 关联内容：{total_counts.get("related", 0)} 条
+- 媒体引用：{total_media} 处
+- 唯一归档图片/媒体文件：{len(unique_media)} 个
 
-公开版保留链接、结构化拆解、评论/引用洞察和 EzRemove 执行映射；完整原始文本只保存在本地忽略目录 `data/raw` 与 `data/processed/public_legacy_content_corpus.json`。
+公开版保留链接、配图、结构化拆解、评论/引用文本和 EzRemove 执行映射；完整原始响应只保存在本地忽略目录 `data/raw` 与 `data/processed/public_legacy_content_corpus.json`。
 """
 
 

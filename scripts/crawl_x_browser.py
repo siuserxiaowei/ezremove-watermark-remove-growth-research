@@ -8,6 +8,7 @@ data/raw and writes a sanitized manifest suitable for public docs.
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -124,6 +125,8 @@ def collect_page(
 
 
 def main() -> int:
+    scrolls = int(os.environ.get("X_BROWSER_SCROLLS", "3"))
+    wait_ms = int(os.environ.get("X_BROWSER_WAIT_MS", "1500"))
     x_cookies = chrome_cookies_for_playwright("x.com")
     twitter_cookies = chrome_cookies_for_playwright("twitter.com")
     all_cookies = x_cookies + twitter_cookies
@@ -171,7 +174,13 @@ def main() -> int:
 
             page_payloads = []
             for name, url in pages:
-                raw = collect_page(page, url, item_dir / f"browser_{name}.json")
+                raw = collect_page(
+                    page,
+                    url,
+                    item_dir / f"browser_{name}.json",
+                    scrolls=scrolls,
+                    wait_ms=wait_ms,
+                )
                 page_payloads.append((name, raw))
                 time.sleep(1)
 

@@ -8,6 +8,7 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +33,11 @@ RAW_FILES = [
     "browser_conversation.json",
     "browser_search_url_latest.json",
     "browser_search_quote_latest.json",
+]
+
+FALLBACK_RAW_FILES = [
+    "tweet_detail_pages.json",
+    "search_quote_pages.json",
 ]
 
 
@@ -85,6 +91,79 @@ def clean_text(text: str) -> str:
 def tweet_text(tweet: dict[str, Any]) -> str:
     legacy = tweet.get("legacy") or {}
     return clean_text(legacy.get("full_text") or legacy.get("text") or "")
+
+
+def media_file_name(tweet_id: str, media_id: str, url: str) -> str:
+    suffix = Path(urlparse(url).path).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4"}:
+        suffix = ".jpg"
+    return f"{tweet_id}_{media_id}{suffix}"
+
+
+def media_from_graphql_tweet(tweet: dict[str, Any]) -> list[dict[str, Any]]:
+    legacy = tweet.get("legacy") or {}
+    tweet_id = str(tweet.get("rest_id") or "")
+    raw_media = []
+    for container in (legacy.get("extended_entities") or {}, legacy.get("entities") or {}):
+        if isinstance(container.get("media"), list):
+            raw_media.extend(container["media"])
+
+    media: dict[str, dict[str, Any]] = {}
+    for idx, item in enumerate(raw_media, 1):
+        if not isinstance(item, dict):
+            continue
+        media_id = str(item.get("id_str") or item.get("id") or f"{tweet_id}_{idx}")
+        media_url = item.get("media_url_https") or item.get("media_url")
+        media_type = item.get("type") or "media"
+        if media_type in {"animated_gif", "video"}:
+            variants = (((item.get("video_info") or {}).get("variants")) or [])
+            mp4_variants = [v for v in variants if v.get("content_type") == "video/mp4" and v.get("url")]
+            if mp4_variants:
+                media_url = sorted(mp4_variants, key=lambda v: v.get("bitrate") or 0)[-1]["url"]
+        if not media_url:
+            continue
+        sizes = item.get("original_info") or {}
+        url = media_url
+        if "pbs.twimg.com/media/" in url and "?" not in url:
+            url = f"{url}?name=orig"
+        media[media_id] = {
+            "id": media_id,
+            "type": media_type,
+            "url": url,
+            "expanded_url": item.get("expanded_url") or "",
+            "width": sizes.get("width") or item.get("sizes", {}).get("large", {}).get("w"),
+            "height": sizes.get("height") or item.get("sizes", {}).get("large", {}).get("h"),
+            "file_name": media_file_name(tweet_id, media_id, url),
+        }
+    return list(media.values())
+
+
+def media_from_fxtwitter(path: Path, tweet_id: str) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    tweet = (((payload.get("data") or {}).get("tweet")) or {})
+    raw_media = ((tweet.get("media") or {}).get("all")) or []
+    media = []
+    for idx, item in enumerate(raw_media, 1):
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url")
+        if not url:
+            continue
+        media_id = str(item.get("id") or f"{tweet_id}_{idx}")
+        media.append(
+            {
+                "id": media_id,
+                "type": item.get("type") or "media",
+                "url": url,
+                "expanded_url": f"https://x.com/{AUTHOR}/status/{tweet_id}/photo/{idx}",
+                "width": item.get("width"),
+                "height": item.get("height"),
+                "file_name": media_file_name(tweet_id, media_id, url),
+            }
+        )
+    return media
 
 
 def author_screen_name(tweet: dict[str, Any]) -> str:
@@ -146,6 +225,27 @@ def extract_source(raw_root: Path, label: str, root_id: str) -> dict[str, Any]:
                 by_id[tid] = tweet
                 source_pages[tid].add(file_name)
 
+    for file_name in FALLBACK_RAW_FILES:
+        path = raw_root / root_id / file_name
+        if not path.exists():
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        page_payloads = payload if isinstance(payload, list) else [payload]
+        for page in page_payloads:
+            data = page.get("data") if isinstance(page, dict) else page
+            for node in walk(data):
+                tweet = unwrap_tweet(node)
+                if not tweet:
+                    continue
+                legacy = tweet.get("legacy") or {}
+                tid = str(tweet.get("rest_id") or "")
+                if not tid or not tweet_text(tweet) or not legacy.get("created_at"):
+                    continue
+                by_id[tid] = tweet
+                source_pages[tid].add(file_name)
+
+    fx_media = media_from_fxtwitter(raw_root / root_id / "fxtwitter.json", root_id)
+
     items = []
     for tid, tweet in by_id.items():
         legacy = tweet.get("legacy") or {}
@@ -162,18 +262,24 @@ def extract_source(raw_root: Path, label: str, root_id: str) -> dict[str, Any]:
                 "url": f"https://x.com/{author_screen_name(tweet) or AUTHOR}/status/{tid}",
                 "text": tweet_text(tweet),
                 "metrics": metrics(tweet),
+                "media": media_from_graphql_tweet(tweet),
                 "source_pages": sorted(source_pages[tid]),
             }
         )
+    for item in items:
+        if item["id"] == root_id and fx_media and not item.get("media"):
+            item["media"] = fx_media
 
     type_order = {"root": 0, "thread": 1, "comment": 2, "quote": 3, "related": 4}
     items.sort(key=lambda item: (type_order.get(item["type"], 9), item.get("created_at") or "", item["id"]))
     counts = Counter(item["type"] for item in items)
+    media_count = sum(len(item.get("media") or []) for item in items)
     return {
         "label": label,
         "root_id": root_id,
         "source_url": f"https://x.com/{AUTHOR}/status/{root_id}",
         "counts": dict(counts),
+        "media_count": media_count,
         "items": items,
     }
 
@@ -204,4 +310,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
