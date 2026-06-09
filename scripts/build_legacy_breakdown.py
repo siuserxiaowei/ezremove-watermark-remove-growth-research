@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import html
 import json
+import sys
 import subprocess
 from collections import Counter
 from pathlib import Path
@@ -989,6 +990,12 @@ def build_readme(corpus: dict, total_items: int, total_counts: Counter) -> str:
 
 
 def main() -> int:
+    curated_source = ROOT / "content" / "curated-report.md"
+    curated_builder = ROOT / "scripts" / "build_curated_site.py"
+    if curated_source.exists() and curated_builder.exists():
+        subprocess.run([sys.executable, str(curated_builder)], check=True)
+        return 0
+
     DOCS.mkdir(parents=True, exist_ok=True)
     SITE.mkdir(parents=True, exist_ok=True)
     corpus = load_corpus()
