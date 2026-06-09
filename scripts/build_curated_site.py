@@ -129,7 +129,7 @@ def build_html(markdown: str) -> str:
   <header>
     <div class="wrap">
       <h1>遗产内容完整拆解</h1>
-      <p>X/Twitter 原文材料、图片、评论与引用，整理成 EzRemove 可执行的 SEO / PR / GEO 增长系统。</p>
+      <p>基于 X/Twitter 原文素材、外部资料和案例研究，重写成 EzRemove 可执行的 SEO / PR / GEO 增长判断。</p>
     </div>
   </header>
   <main class="wrap">
