@@ -1,5 +1,73 @@
 # EzRemove `watermark remove` 增长研究
 
+
+<!-- SIUSER-REPO-GUIDE:START -->
+## 项目介绍 / Project Introduction
+
+### 中文
+EzRemove watermark remove 增长研究：把飞书/X 素材拆解为 SEO、PR、KOL、GEO、产品转化和合规执行方案。
+
+### English
+EzRemove watermark-removal growth research covering SEO, PR, KOL, GEO, product conversion, and compliance execution.
+
+## 使用方式 / Usage
+
+### 中文
+1. 优先打开在线入口或本地静态服务查看最终页面。
+2. 内容型仓库通常从 `README.md`、`docs/`、`data/` 或 `content/` 开始阅读。
+3. 更新资料后，重新生成或刷新静态页面，并检查链接、图片和文字是否正常。
+
+### English
+1. Start with the live link or a local static server to view the final page.
+2. For content repositories, begin with `README.md`, `docs/`, `data/`, or `content/`.
+3. After updating material, regenerate or refresh the static page and check links, images, and copy.
+
+## 入口与元信息 / Entry Points & Metadata
+
+- GitHub 仓库 / Repository: https://github.com/siuserxiaowei/ezremove-watermark-remove-growth-research
+- Live / 在线入口：https://siuserxiaowei.github.io/ezremove-watermark-remove-growth-research/
+- 默认分支 / Default branch: `main`
+- 主要语言 / Primary language: `Python`
+- 可见性 / Visibility: `public`
+- 仓库类型 / Repository type: `source`
+
+## 本地运行 / Local Run
+
+```bash
+git clone https://github.com/siuserxiaowei/ezremove-watermark-remove-growth-research.git
+cd ezremove-watermark-remove-growth-research
+python3 -m http.server 8000
+```
+
+## 仓库结构 / Repository Map
+
+| 路径 / Path | 中文说明 | English |
+| --- | --- | --- |
+| `README.md` | 项目入口说明，先读这里。 | Main project entry point and orientation. |
+| `docs` | 文档或 GitHub Pages 输出目录。 | Documentation or GitHub Pages output. |
+| `data` | 数据、索引或结构化内容。 | Data, indexes, or structured content. |
+| `content` | 内容源文件或报告正文。 | Source content or report body. |
+| `notes` | 研究笔记、草稿或拆解材料。 | Research notes, drafts, or breakdown material. |
+| `scripts` | 构建、同步、生成或维护脚本。 | Build, sync, generation, or maintenance scripts. |
+| `site` | 本地站点构建输出或站点源文件。 | Local site output or site source files. |
+| `.gitignore` | 项目文件或目录。 | Project file or directory. |
+
+## 维护备注 / Maintenance Notes
+
+- 中文：当项目目标、在线入口、运行命令或目录结构变化时，同步更新本说明。
+- English: Keep this guide updated when the project purpose, live link, run commands, or structure changes.
+- 中文：修改代码、数据或生成页面后，优先运行相关构建、测试或校验命令。
+- English: After changing code, data, or generated pages, run the relevant build, test, or validation command.
+
+## 安全与隐私 / Safety & Privacy
+
+- 中文：不要提交 API key、token、密码、cookie、私有链接或内部账号资料。
+- English: Do not commit API keys, tokens, passwords, cookies, private URLs, or internal account data.
+- 中文：公开 GitHub Pages 前，确认资料已脱敏并允许公开。
+- English: Before publishing GitHub Pages output, confirm the material is redacted and cleared for public release.
+<!-- SIUSER-REPO-GUIDE:END -->
+
+
 这是一个面向 EzRemove 的公开增长研究仓库。它把团队飞书研究稿、ZaneWynn_SEO 的公开 X/Twitter 内容、评论/引用洞察、SEO 资料和案例研究，整理成一份可以直接执行的 `watermark remove` 增长方案。
 
 公开页面：<https://siuserxiaowei.github.io/ezremove-watermark-remove-growth-research/>
